@@ -52,7 +52,7 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## Authors
 
-- [Your Name](https://github.com/Asadshayan) - Initial work
+- [AsadShayan](https://github.com/Asadshayan) - Initial work
 
 --- 
 
