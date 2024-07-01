@@ -1,68 +1,34 @@
-import face_recognition
+import tensorflow as tf
 import cv2
 import numpy as np
-import csv
 import os
 from datetime import datetime
+import csv
+
+# Load the pre-trained face detection model from TensorFlow
+face_detector = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+
+# Load known faces and their encodings
+def load_known_faces_and_names(directory):
+    known_faces = []
+    known_names = []
+    for filename in os.listdir(directory):
+        if filename.endswith(".jpeg") or filename.endswith(".jpg") or filename.endswith(".png"):
+            image = cv2.imread(os.path.join(directory, filename))
+            rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            face_locations = face_detector.detectMultiScale(rgb_image, scaleFactor=1.1, minNeighbors=5)
+            if len(face_locations) > 0:
+                x, y, w, h = face_locations[0]
+                face_image = rgb_image[y:y+h, x:x+w]
+                face_encoding = tf.image.resize(face_image, (160, 160)).numpy().flatten()
+                known_faces.append(face_encoding)
+                known_names.append(os.path.splitext(filename)[0])
+    return known_faces, known_names
+
+known_faces, known_names = load_known_faces_and_names("photos")
 
 # Initialize the video capture object for the default camera
-cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-
-# Load known faces
-dar_image = face_recognition.load_image_file("photos/dar.jpeg")
-# then the face recog library encodes all the raw data of the image
-dar_encoding = face_recognition.face_encodings(dar_image)[0]
-
-# same goes for all the images
-talal_image = face_recognition.load_image_file("photos/talal.jpeg")
-talal_encoding = face_recognition.face_encodings(talal_image)[0]
-
-makar_image = face_recognition.load_image_file("photos/makar.jpeg")
-makar_encoding = face_recognition.face_encodings(makar_image)[0]
-
-peer_image = face_recognition.load_image_file("photos/peer.jpeg")
-peer_encoding = face_recognition.face_encodings(peer_image)[0]
-
-shayan_image = face_recognition.load_image_file("photos/shayan.jpeg")
-shayan_encoding = face_recognition.face_encodings(shayan_image)[0]
-
-# Load the image
-ryan_image = face_recognition.load_image_file("photos/ryan.jpeg")
-# Get the face encodings (if any)
-ryan_encoding = face_recognition.face_encodings(ryan_image)
-# Check if any face encodings were found
-if ryan_encoding:
-    # If at least one face encoding is found, use the first one
-    ryan_encoding = ryan_encodings[0]
-else:
-    # Handle the case where no face encodings are found
-    print("No face found in the image 'ryan.jpeg'")
-    # You might want to handle this case differently based on your requirements
-known_faces_encoding = [
-    dar_encoding,
-    talal_encoding,
-    peer_encoding,
-    makar_encoding,
-    shayan_encoding,
-    ryan_encoding
-]
-
-# the list for all the known faces we have
-known_faces_names = [
-    "dar",
-    "talal",
-    "makar",
-    "peer",
-    "shayan",
-    "ryan"
-]
-
-# Create a copy of the known face names for expected students
-expected_students = known_faces_names.copy()
-
-# Initialize variables for face locations and encodings
-face_locations = []
-face_encodings = []
+cap = cv2.VideoCapture(0)
 
 # Get the current time
 now = datetime.now()
@@ -74,21 +40,26 @@ with open(f"{current_date}.csv", "w+", newline="") as f:
 
     # Start the main video capture loop
     while True:
-        _, frame = cap.read()
+        ret, frame = cap.read()
+        if not ret:
+            break
         small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
         rgb_small_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
 
-        # Recognize faces in the frame
-        face_locations = face_recognition.face_locations(rgb_small_frame)
-        face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
+        # Detect faces in the frame
+        face_locations = face_detector.detectMultiScale(rgb_small_frame, scaleFactor=1.1, minNeighbors=5)
+        face_encodings = []
+
+        for (x, y, w, h) in face_locations:
+            face_image = rgb_small_frame[y:y+h, x:x+w]
+            face_encoding = tf.image.resize(face_image, (160, 160)).numpy().flatten()
+            face_encodings.append(face_encoding)
 
         for face_encoding in face_encodings:
-            matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
-            face_distance = face_recognition.face_distance(known_face_encodings, face_encoding)
-            best_match_index = np.argmin(face_distance)
-
-            if matches[best_match_index]:
-                name = known_face_names[best_match_index]
+            distances = [np.linalg.norm(face_encoding - known_face) for known_face in known_faces]
+            best_match_index = np.argmin(distances)
+            if distances[best_match_index] < 0.6:
+                name = known_names[best_match_index]
 
                 # Add text if the person is present
                 font = cv2.FONT_HERSHEY_SIMPLEX
@@ -97,10 +68,10 @@ with open(f"{current_date}.csv", "w+", newline="") as f:
                 font_color = (255, 0, 0)
                 thickness = 3
                 line_type = 2
-                cv2.putText(frame, f"{name} PRESENT", bottom_left_corner_of_text, 0, font_scale, font_color, thickness, line_type)
+                cv2.putText(frame, f"{name} PRESENT", bottom_left_corner_of_text, font, font_scale, font_color, thickness, line_type)
 
-                if name in expected_students:
-                    expected_students.remove(name)
+                if name in known_names:
+                    known_names.remove(name)
                     current_time = now.strftime("%H-%M-%S")
                     writer.writerow([name, current_time])
 
